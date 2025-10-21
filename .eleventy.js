@@ -529,9 +529,18 @@ module.exports = function (eleventyConfig) {
   eleventyConfig.addPassthroughCopy("src/site/scripts");
   eleventyConfig.addPassthroughCopy("src/site/styles/_theme.*.css");
 
-  // IMPORTANT: don't write a nested `dist` folder here. favicons plugin should write
-  // into the final output tree. Use a path under the final output dir like `img/favicons`.
-  eleventyConfig.addPlugin(faviconsPlugin, { outputDir: "img/favicons" });
+const path = require("path");
+
+// ensure favicons target exists inside the Pages build output
+const favOut = path.join(process.cwd(), "dist", "img", "favicons");
+try {
+  fs.mkdirSync(favOut, { recursive: true });
+} catch (e) {
+  // ignore
+}
+
+// use the output path (not a root-relative "img/favicons")
+  eleventyConfig.addPlugin(faviconsPlugin, { outputDir: "dist/img/favicons" });
 
   eleventyConfig.addPlugin(tocPlugin, {
     ul: true,
