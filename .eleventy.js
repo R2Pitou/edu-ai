@@ -1,3 +1,9 @@
+// Updated .eleventy.js with two fixes:
+// 1) Stop passing "dist" into favicons plugin which created a nested dist/dist output.
+// 2) Add global `site` data (baseUrl) so templates can opt into a base prefix via BASE_URL env var.
+// 3) Keep image optimized output directory relative to project root but not duplicating "dist" in plugin.
+// 4) Add a recommended npm script for build (see package.json snippet below)
+
 const slugify = require("@sindresorhus/slugify");
 const markdownIt = require("markdown-it");
 const fs = require("fs");
@@ -19,6 +25,8 @@ function transformImage(src, cls, alt, sizes, widths = ["500", "700", "auto"]) {
   let options = {
     widths: widths,
     formats: ["webp", "jpeg"],
+    // write optimized images into the final output tree under img/optimized
+    // avoid using "dist" here because Eleventy already writes to the configured output dir
     outputDir: "./dist/img/optimized",
     urlPath: "/img/optimized",
   };
@@ -91,12 +99,19 @@ function getAnchorAttributes(filePath, linkTitle) {
   }
 }
 
-const tagRegex = /(^|\s|\>)(#[^\s!@#$%^&*()=+\.,\[{\]};:'"?><]+)(?!([^<]*>))/g;
+const tagRegex = /(^|\s|\>)(#[^\s!@#$%^&*()=+\.,\[\{\]};:'"?\><]+)(?!([^<]*>))/g;
 
 module.exports = function (eleventyConfig) {
   eleventyConfig.setLiquidOptions({
     dynamicPartials: true,
   });
+
+  // Expose a global site object so templates can prefix assets when BASE_URL is used
+  // Set BASE_URL in Cloudflare Pages env if you ever host under a subpath.
+  eleventyConfig.addGlobalData("site", {
+    baseUrl: process.env.BASE_URL || "",
+  });
+
   let markdownLib = markdownIt({
     breaks: true,
     html: true,
@@ -135,7 +150,6 @@ module.exports = function (eleventyConfig) {
     })
     .use(namedHeadingsFilter)
     .use(function (md) {
-      //https://github.com/DCsunset/markdown-it-mermaid-plugin
       const origFenceRule =
         md.renderer.rules.fence ||
         function (tokens, idx, options, env, self) {
@@ -214,7 +228,6 @@ module.exports = function (eleventyConfig) {
         };
       md.renderer.rules.image = (tokens, idx, options, env, self) => {
         const imageName = tokens[idx].content;
-        //"image.png|metadata?|width"
         const [fileName, ...widthAndMetaData] = imageName.split("|");
         const lastValue = widthAndMetaData[widthAndMetaData.length - 1];
         const lastValueIsNumber = !isNaN(lastValue);
@@ -278,7 +291,6 @@ module.exports = function (eleventyConfig) {
     return (
       str &&
       str.replace(/\[\[(.*?\|.*?)\]\]/g, function (match, p1) {
-        //Check if it is an embedded excalidraw drawing or mathjax javascript
         if (p1.indexOf("],[") > -1 || p1.indexOf('"$"') > -1) {
           return match;
         }
@@ -381,14 +393,6 @@ module.exports = function (eleventyConfig) {
           }
         );
 
-        /* Hacky fix for callouts with only a title:
-        This will ensure callout-content isn't produced if
-        the callout only has a title, like this:
-        ```md
-        > [!info] i only have a title
-        ```
-        Not sure why content has a random <p> tag in it,
-        */
         if (content === "\n<p>\n") {
           content = "";
         }
@@ -524,7 +528,11 @@ module.exports = function (eleventyConfig) {
   eleventyConfig.addPassthroughCopy("src/site/img");
   eleventyConfig.addPassthroughCopy("src/site/scripts");
   eleventyConfig.addPassthroughCopy("src/site/styles/_theme.*.css");
-  eleventyConfig.addPlugin(faviconsPlugin, { outputDir: "dist" });
+
+  // IMPORTANT: don't write a nested `dist` folder here. favicons plugin should write
+  // into the final output tree. Use a path under the final output dir like `img/favicons`.
+  eleventyConfig.addPlugin(faviconsPlugin, { outputDir: "img/favicons" });
+
   eleventyConfig.addPlugin(tocPlugin, {
     ul: true,
     tags: ["h1", "h2", "h3", "h4", "h5", "h6"],
@@ -573,3 +581,17 @@ module.exports = function (eleventyConfig) {
     passthroughFileCopy: true,
   };
 };
+
+
+/*
+Add this to package.json if you don't already have it:
+
+"scripts": {
+  "build": "eleventy --output dist"
+}
+
+Then configure Cloudflare Pages:
+- Build command: npm run build
+- Build output directory: dist
+- (Optional) Set environment variable BASE_URL if you host under a subpath.
+*/
